@@ -1,0 +1,63 @@
+// This Arduino sketch is a demo to the 'Arduino Keypad' App for Android devices (Both created by installtekz.com)
+// Use a virtual keypad over Bluetooth communication as a substitute for the physical hardware kaypad
+//
+// You are free to do as you wish with this code.
+//
+// Enter the password: '123' followed by the '#' key to validate the password.
+// Open the Serial Monitor to check functionality (Open 'Tools>Serial Monitor' in Arduino IDE)
+// '*' will reset your password guess
+// ################################################### Incoming Text Strings From The Arduino Keypad App: ##########################################
+// 0,1,2,3,4,5,6,7,8,9,A,B,C,D,*,#
+// #################################################################################################################################################
+
+String inbound;
+String password = "123";
+String guess = "";
+
+void resetGuess() {
+  guess = "";
+}
+
+
+void checkPassword() {
+  if (guess == password){
+    // Enter your successful password code here..
+    Serial.println("CORRECT Password!");
+    resetGuess();
+  }
+  else {
+    // Enter your failed password code here..
+    Serial.println("WRONG Password!");
+    resetGuess();
+  }
+}
+
+  
+void setup() {
+  Serial.begin(9600);
+}
+
+
+void loop() {
+  while(Serial.available()) {
+    delay(50);
+    char c=Serial.read();
+    inbound+=c;
+    }
+  
+  if (inbound.length()>0) {
+        if (inbound == "#") {
+            // Enter
+            checkPassword();
+          }
+          else if (inbound == "*") {
+            // Reset
+            resetGuess();
+          }
+          else {
+            guess+=inbound;
+          }
+        Serial.println("Key Pressed: " + inbound + "     Current Guess: " + guess);
+        inbound="";
+  }
+}
