@@ -1,59 +1,124 @@
-//Board DOIT ESP32 DEVKIT V1
+// Board DOIT ESP32 DEVKIT V1
 #include "BluetoothSerial.h"
 #include <LiquidCrystal_I2C.h>
-#include <Keypad.h>
 
-const int lcdColunas = 16; //Número de colunas do LCD
-const int lcdLinhas = 2; //Número de linhas do LCD
+const int lcdColunas = 16; // Número de colunas do LCD
+const int lcdLinhas = 2;   // Número de linhas do LCD
 
-const int shield_rele = 26; //Saída padrão do Shield Rele
+const int shield_rele = 26; // Saída padrão do Shield Rele
 
-LiquidCrystal_I2C lcd(0x27, lcdColunas, lcdLinhas);  //Endereço do LCD, numero de colunas e numero de linhas
-//Endereço padrão do LCD é 0x27
+String senhaCorreta = "";          // Senha padrão
+const int tentativasMaximas = 3;   // Número máximo de tentativas permitidas
+const int bloqueioTempo = 3600000; // Tempo de bloqueio em milissegundos (1 hora)
+const int tempo_desbloqueado = 10000;
 
+LiquidCrystal_I2C lcd(0x27, lcdColunas, lcdLinhas); // Endereço do LCD, número de colunas e número de linhas
+// Endereço padrão do LCD é 0x27
 
+int tentativas = 0;            // Contador de tentativas
+bool bloqueado = false;        // Flag para verificar se está bloqueado
+unsigned long tempoDesbloqueio; // Tempo de desbloqueio
 
-/*const byte ROWS = 4; //Número de linhas do teclado
-const byte COLS = 4; //Número de colunas do teclado
+//---------------------CONFIGURAÇÃO BLUETOOTH--------------------------//
+String device_name = "ESP32-BT-Samuel";
 
-/*char hexaKeys[ROWS][COLS] = {
-  {'1', '2', '3', 'A'},
-  {'4', '5', '6', 'B'},
-  {'7', '8', '9', 'C'},
-  {'*', '0', '#', 'D'}
-}; //Matriz do teclado
+const char *pin = "1234";
 
-byte rowPins[ROWS] = {16, 4, 2, 15}; //Saídas das linhas do teclado
-byte colPins[COLS] = {17, 5, 18, 19}; //Saídas das colunas do teclado
+#if !defined(CONFIG_BT_ENABLED) || !defined(CONFIG_BLUEDROID_ENABLED)
+#error Bluetooth is not enabled! Please run `make menuconfig` to and enable it
+#endif
 
-Keypad customKeypad = Keypad(makeKeymap(hexaKeys), rowPins, colPins, ROWS, COLS);*/ //Mapeamento do teclado
+#if !defined(CONFIG_BT_SPP_ENABLED)
+#error Serial Bluetooth not available or not enabled. It is only available for the ESP32 chip.
+#endif
 
+BluetoothSerial SerialBT;
+//---------------------------------------------------------------------//
 
+void setup()
+{
+  Serial.begin(115200); // Serial do teclado
 
-void setup(){
-  Serial.begin(115200); //Serial do teclado
+  SerialBT.begin(device_name); // Nome do device
 
-  pinMode(shield_rele, OUTPUT); //Coloca a saída do Shield Rele como saída
+  pinMode(shield_rele, OUTPUT); // Coloca a saída do Shield Rele como saída
+  digitalWrite(shield_rele, HIGH); // Começa com a tranca fechada
 
-  lcd.init(); //inicializa o LCD
+  lcd.init();       // Inicializa o LCD
+  lcd.backlight();  // Liga a luz de fundo do LCD
 
-  lcd.backlight(); //liga a luz de fundo do LCD
+  lcd.setCursor(0, 0); // Coloca o cursor do display na primeira coluna e primeira linha
+  lcd.print("Insira a senha"); // Imprime a mensagem para inserir a senha
 }
 
-void loop(){
-  //digitalWrite(shield_rele, LOW); //Abre a tranca
-  //delay(10000);
-  //digitalWrite(shield_rele, LOW); //Fecha a tranca
+void loop()
+{
+  if (bloqueado)
+  {
+    if (millis() - tempoDesbloqueio >= bloqueioTempo)
+    {
+      bloqueado = false;
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Insira a senha");
+      tentativas = 0; // Reinicia o contador de tentativas
+    }
+    return;
+  }
 
-  //char customKey = customKeypad.getKey(); //Captura a tecla pressionada do teclado
+  if (SerialBT.available())
+  {
+    String senha = SerialBT.readStringUntil('\n');
+    senha.trim(); // Remove espaços em branco do início e fim da senha
 
-  /*if (customKey){
-    Serial.println(customKey);
-  }*/ //imprime a tecla capturada no terminal
+    if (senhaCorreta == "")
+    {
+      // Pré-cadastro da senha
+      senhaCorreta = senha;
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Senha cadastrada");
+      delay(2000);
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Insira a senha");
+    }
+    else
+    {
+      if (senha.length() == senhaCorreta.length() && senha == senhaCorreta)
+      {
+        // Senha correta
+        tentativas = 0; // Reinicia o contador de tentativas
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Senha correta");
+        digitalWrite(shield_rele, LOW); // Abre a tranca
+        delay(tempo_desbloqueado);
+        digitalWrite(shield_rele, HIGH); // Fecha a tranca novamente
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Insira a senha");
 
-  lcd.setCursor(0, 0); //Coloca o cursor do display na primeira coluna e primeira linha
-  
-  lcd.print("Hello, World!"); //Imprime a mensagem
-  
-  //lcd.clear(); //Limpa o LCD
+        // Bloqueia por 1 hora após 3 tentativas incorretas consecutivas
+      }
+      else
+      {
+        // Senha incorreta
+        tentativas++;
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Senha incorreta");
+        lcd.setCursor(0, 1);
+        lcd.print("Tentativas: " + String(tentativas) + "/" + String(tentativasMaximas));
+
+        if (tentativas >= tentativasMaximas)
+        {
+          bloqueado = true;
+          tempoDesbloqueio = millis();
+          lcd.setCursor(0, 1);
+          lcd.print("Bloqueado por 1h");
+        }
+      }
+    }
+  }
 }
